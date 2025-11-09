@@ -1,0 +1,71 @@
+name: Terraform CI (test WIF)
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Terraform action to perform'
+        required: true
+        default: 'plan'
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+  push:
+    branches: [ main ]
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to GCP using Workload Identity
+        uses: google-github-actions/auth@v3
+        with:
+          # full resource name for the provider (use project NUMBER here)
+          workload_identity_provider: "projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/${{ secrets.WIF_POOL_ID }}/providers/${{ secrets.WIF_PROVIDER_ID }}"
+          service_account: "${{ secrets.TF_SA_EMAIL }}"
+
+      - name: Setup gcloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        working-directory: ./terraform
+        run: |
+          terraform init -input=false \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="prefix=${{ secrets.TF_STATE_PREFIX }}"
+
+      - name: Terraform Plan
+        if: github.event.inputs.action != 'destroy'
+        working-directory: ./terraform
+        run: |
+          terraform plan -input=false \
+            -var="project=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="backend_bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -out=tfplan
+
+      - name: Terraform Plan Destroy
+        if: github.event.inputs.action == 'destroy'
+        working-directory: ./terraform
+        run: |
+          terraform plan -destroy -input=false \
+            -var="project=${{ secrets.GCP_PROJECT_ID }}" \
+            -var="backend_bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        if: github.event.inputs.action == 'apply' || github.event.inputs.action == 'destroy'
+        working-directory: ./terraform
+        run: terraform apply -auto-approve tfplan

@@ -1,3 +1,5 @@
+# Ignore local terraform variable files
+terraform/terraform.tfvars
 # Local .terraform directories
 .terraform/
 
@@ -35,3 +37,5 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+bootstrap.sh
+README_BOOTSTRAP.md
